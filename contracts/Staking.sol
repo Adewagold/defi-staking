@@ -12,48 +12,62 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 contract Staking{
 
     IERC20 public s_stakingToken;
+    IERC20 public s_rewardToken;
 
     //someone's address -> how much they staked
     mapping(address=>uint256) public s_balances;
     // a mapping of how much each address has been paid;
     mapping(address => uint256) public s_userRewardPerTokenPaid;
-    // a mapping of how much each asset has
-    mapping(address=> uint256) public rewards;
+    // a mapping of how much each asset has to claim
+    mapping(address=> uint256) public s_rewards;
 
     uint256 public s_totalSupply;
     uint256 public s_rewardPerTokenStored;
     uint256 public s_lastUpdateTime;
     uint256 public constant REWARD_RATE = 100;
 
+    error Staking__MoreThanZero();
+    constructor(address stakingToken, address rewardToken){
+        s_stakingToken = IERC20(stakingToken);
+        s_rewardToken = IERC20(rewardToken);
+    }
 
     modifier updateReward(address account){
         // how much reward per token?
         // last timestamp
         // 12 - 1, user earned X tokens
         s_rewardPerTokenStored = rewardPerToken();
-        s_rewards[accounts] = earned(account);
+        s_rewards[account] = earned(account);
         s_userRewardPerTokenPaid[account] = s_rewardPerTokenStored;
+        _;
+    }
+
+    modifier moreThanZero(uint256 amount){
+        if(amount == 0){
+            revert Staking__MoreThanZero();
+        }
+        _;
     }
 
     function earned(address account) public view returns(uint256){
-        uint356 currentBalance = s_balances[account];
+        uint256 currentBalance = s_balances[account];
         //how much they have been paid already
         uint256 amountPaid = s_userRewardPerTokenPaid[account];
         uint256 currentRewardPerToken = rewardPerToken();
         uint256 pastRewards = s_rewards[account];
 
-        ((currentBalance * (currentRewardPerToken - amountPaid)) / 1e18) + pastRewards;
+        uint256 _earned = ((currentBalance * (currentRewardPerToken - amountPaid)) / 1e18) + pastRewards;
+        return _earned;
     }
 
-    constructor(address stakingToken){
-        s_stakingToken = IERC20(stakingToken);
-    }
+    
     //do we allow any tokens -not allow any token,
     // Chainlink stuff to convert prices between tokens.
     // or just a specific tokens?
     error Staking__TransferFailed();
 
-    function stake(uint256 amount) external updateReward(msg.sender){
+
+    function stake(uint256 amount) external updateReward(msg.sender) moreThanZero(amount){
         //keep tract of how much this user has staked
         //keep track of how much token we have total
         //transfer the tokens to this contract
@@ -118,6 +132,11 @@ contract Staking{
         // PA: 80, Earned: 240 + (80/200) = 0.4 x 100 = 40, withdrawn: 0
         // PB: 20, Earned: 60 + (20/200) = 0.1 x 100 = 10, withdrawn: 0
         // PC: 100, Earned: 60 + (100/200) = 0.5 x 100 = 50, withdrawn: 0
+        uint256  reward = s_rewards[msg.sender];
+        bool success = s_rewardToken.transfer(msg.sender, reward);
+        if(!success){
+            revert Staking__TransferFailed();
+        }
     }
 
     function rewardPerToken() public view returns(uint256){
@@ -125,6 +144,6 @@ contract Staking{
             return s_rewardPerTokenStored;
         }
         // How long has it been since the last stake or withdrawal.
-        return s_rewardPerTokenStored + (((block.timestamp - s_lastUpdateTime ) * REWARD_RATE * 1e18) / s_totalSupply)
+        return s_rewardPerTokenStored + (((block.timestamp - s_lastUpdateTime ) * REWARD_RATE * 1e18) / s_totalSupply);
     }
 }
